@@ -133,6 +133,25 @@ pub(crate) fn zcode_app_version() -> String {
     static CACHE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     CACHE
         .get_or_init(|| {
+            #[cfg(target_os = "macos")]
+            {
+                let (path, _) = crate::store::effective_zcode_path(&crate::store::Paths::detect());
+                let executable = std::path::Path::new(&path);
+                if let Some(contents) = executable.parent().and_then(|p| p.parent()) {
+                    let plist = contents.join("Info.plist");
+                    if let Ok(out) = no_window("/usr/libexec/PlistBuddy")
+                        .args(["-c", "Print :CFBundleShortVersionString"])
+                        .arg(plist)
+                        .output()
+                    {
+                        let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        if out.status.success() && !version.is_empty() {
+                            return normalize_version(&version);
+                        }
+                    }
+                }
+            }
+            #[cfg(windows)]
             for hive in [
                 r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
                 r"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -168,6 +187,7 @@ pub(crate) fn zcode_app_version() -> String {
         .clone()
 }
 
+#[cfg(windows)]
 fn is_zcode_display_name(name: &str) -> bool {
     let l = name.to_lowercase();
     l.contains("zcode") && !l.contains("switch")
